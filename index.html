@@ -3,201 +3,114 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Retro 144p Video Converter (FFmpeg.wasm)</title>
+  <title>Retro 144p Video Converter</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; background:#0f1720; color:#e6eef8; padding:18px; }
-    .card{ background:linear-gradient(180deg,#0b1220,#09121a); border:1px solid rgba(255,255,255,0.04); padding:18px; border-radius:12px; max-width:900px; margin:18px auto;}
-    h1{ margin:0 0 8px 0; font-size:20px;}
-    label{ display:block; margin:10px 0 6px; font-size:14px; color:#bcd3ff; }
-    input[type=file]{ color: #fff; }
-    button{ background:#2563eb; border:none; padding:10px 14px; border-radius:8px; color:white; cursor:pointer; font-weight:600; }
-    button:disabled{ opacity:0.5; cursor:not-allowed; }
-    .progress{ height:10px; background:rgba(255,255,255,0.06); border-radius:6px; overflow:hidden; margin-top:8px; }
-    .bar{ height:100%; width:0%; background:linear-gradient(90deg,#7dd3fc,#2563eb); transition: width 0.2s; }
-    video{ max-width:100%; border-radius:8px; margin-top:12px; background:black;}
-    .meta{ font-size:13px; color:#9fb6ff; margin-top:8px; }
-    .note{ font-size:13px; color:#9aaecf; margin-top:6px; }
-    footer{ text-align:center; color:#6f8bbd; margin-top:18px; font-size:13px; }
-    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .small{ font-size:13px; color:#9aaecf; }
+    body{font-family:sans-serif;background:#0e141f;color:#e6edf5;padding:20px;}
+    h1{font-size:20px;margin-bottom:10px;}
+    .card{background:#141d2a;border:1px solid #263448;padding:20px;border-radius:12px;max-width:800px;margin:auto;}
+    input,button,select{margin:5px 0;padding:8px;border-radius:6px;border:none;}
+    button{background:#2563eb;color:white;cursor:pointer;font-weight:bold;}
+    button:disabled{opacity:0.5;cursor:not-allowed;}
+    video{max-width:100%;margin-top:10px;border-radius:6px;background:black;}
+    .progress{height:10px;background:#1e293b;border-radius:5px;overflow:hidden;margin-top:10px;}
+    .bar{height:100%;width:0%;background:#3b82f6;transition:width .2s;}
+    .note{font-size:13px;color:#94a3b8;margin-top:10px;}
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Retro 144p Video Converter — 静的 (GitHub Pages 用)</h1>
-    <div class="note">クライアント側で動画を <strong>144p</strong> に変換し、レトロ風の色調とノイズを自動で追加します。変換にはブラウザ内で <code>ffmpeg.wasm</code> を使用しています。</div>
+    <h1>🎞️ Retro 144p Video Converter</h1>
+    <p>動画をブラウザ内で低解像度（144p）＆レトロ風エフェクトに変換します。</p>
 
-    <label for="file">動画ファイルを選択（mp4, webm 等）</label>
-    <input id="file" type="file" accept="video/*">
+    <input type="file" id="file" accept="video/*"><br>
+    <select id="resolution">
+      <option value="256:144">144p (256x144)</option>
+      <option value="426:240">240p (426x240)</option>
+      <option value="320:180">180p (320x180)</option>
+    </select>
+    <br>
+    <button id="convert">変換開始</button>
+    <button id="download" disabled>ダウンロード</button>
+    <div id="status"></div>
+    <div class="progress"><div id="bar" class="bar"></div></div>
 
-    <div style="margin-top:10px;">
-      <label class="small">出力設定（必要なら調整）</label>
-      <div class="row">
-        <select id="targetRes">
-          <option value="256:144">256x144 (144p)</option>
-          <option value="426:240">426x240 (240p)</option>
-          <option value="320:180">320x180 (180p)</option>
-        </select>
-        <label class="small">ビットレート</label>
-        <input id="bitrate" type="text" value="200k" style="padding:6px;border-radius:6px;border:none;background:#071026;color:#eaf4ff">
-      </div>
-    </div>
-
-    <div style="margin-top:12px;">
-      <button id="startBtn">変換開始</button>
-      <button id="downloadBtn" disabled>変換後をダウンロード</button>
-      <span id="status" class="small" style="margin-left:10px;"></span>
-    </div>
-
-    <div class="progress" style="margin-top:10px;">
-      <div id="bar" class="bar"></div>
-    </div>
-
-    <div id="previewArea" style="margin-top:12px; display:none;">
-      <label class="small">変換後プレビュー</label>
-      <video id="preview" controls playsinline></video>
-      <div class="meta" id="meta"></div>
-    </div>
-
-    <div class="note" style="margin-top:12px;">
-      ご注意: 初回ロードで ffmpeg コアがダウンロードされ動作可能になるまで時間がかかります。長い動画は処理に時間が掛かります。
-    </div>
-    <footer>© Retro 144p Converter — Client-side with FFmpeg.wasm</footer>
+    <video id="output" controls></video>
+    <p class="note">※ 初回は ffmpeg コア (~25MB) をダウンロードします。しばらくお待ちください。</p>
   </div>
 
-<script type="module">
-  import { createFFmpeg, fetchFile } from "https://unpkg.com/@ffmpeg/ffmpeg@0.12.2/dist/ffmpeg.min.js";
+  <script type="module">
+    import { createFFmpeg, fetchFile } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.9/dist/ffmpeg.min.mjs";
 
-  const ffmpeg = createFFmpeg({
-    log: true,
-    corePath: "https://unpkg.com/@ffmpeg/core@0.11.1/dist/ffmpeg-core.js" // CDN core
-  });
+    const ffmpeg = createFFmpeg({
+      log: true,
+      corePath: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.9/dist/ffmpeg-core.js"
+    });
 
-  const fileInput = document.getElementById("file");
-  const startBtn = document.getElementById("startBtn");
-  const downloadBtn = document.getElementById("downloadBtn");
-  const statusEl = document.getElementById("status");
-  const bar = document.getElementById("bar");
-  const preview = document.getElementById("preview");
-  const previewArea = document.getElementById("previewArea");
-  const metaEl = document.getElementById("meta");
-  const targetRes = document.getElementById("targetRes");
-  const bitrateInput = document.getElementById("bitrate");
+    const fileInput = document.getElementById("file");
+    const convertBtn = document.getElementById("convert");
+    const downloadBtn = document.getElementById("download");
+    const status = document.getElementById("status");
+    const bar = document.getElementById("bar");
+    const video = document.getElementById("output");
+    const resolution = document.getElementById("resolution");
 
-  let latestOutputUrl = null;
+    let outUrl = null;
 
-  function setStatus(text){
-    statusEl.textContent = text || "";
-  }
+    ffmpeg.setProgress(({ ratio }) => {
+      bar.style.width = (ratio * 100).toFixed(1) + "%";
+    });
 
-  function setProgress(p){
-    bar.style.width = Math.max(0, Math.min(100, p*100)) + "%";
-  }
+    convertBtn.onclick = async () => {
+      const file = fileInput.files[0];
+      if (!file) return alert("動画ファイルを選択してください。");
 
-  // ffmpeg progress hookup (if supported)
-  ffmpeg.setProgress(({ratio}) => {
-    setProgress(ratio || 0);
-  });
+      convertBtn.disabled = true;
+      status.textContent = "初期化中...";
+      if (!ffmpeg.isLoaded()) await ffmpeg.load();
 
-  startBtn.addEventListener("click", async () => {
-    const f = fileInput.files[0];
-    if (!f) {
-      alert("動画ファイルを選択してください。");
-      return;
-    }
+      status.textContent = "変換中...";
+      const inName = "input.mp4";
+      const outName = "output.mp4";
 
-    startBtn.disabled = true;
-    downloadBtn.disabled = true;
-    setProgress(0);
-    setStatus("ffmpeg を初期化中...");
-    previewArea.style.display = "none";
+      ffmpeg.FS("writeFile", inName, await fetchFile(file));
 
-    try {
-      if (!ffmpeg.isLoaded()) {
-        setStatus("ffmpeg をロード中（初回のみ大きなダウンロード）...");
-        await ffmpeg.load();
-      }
+      const [w, h] = resolution.value.split(":");
 
-      setStatus("ファイルを読み込み中...");
-      const inName = "input" + (/\.\w+$/.exec(f.name) ? RegExp.$& : ".mp4");
-      const outName = "output_retro.mp4";
-
-      ffmpeg.FS("writeFile", inName, await fetchFile(f));
-
-      // 出力解像度
-      const [w,h] = targetRes.value.split(":");
-      const bitrate = bitrateInput.value || "200k";
-
-      // フィルタチェーン（レトロ風）
-      // - scale: 指定解像度
-      // - eq: コントラスト/明度/彩度微調整
-      // - hue: 色相微調整（少しズラして古めかしさ）
-      // - noise: 映像ノイズを追加（grain）
-      // - vflip+tblend を入れることでややフィルム風の揺れを出せる（オプション）
       const vf = [
         `scale=${w}:${h}`,
-        `eq=contrast=0.95:brightness=-0.02:saturation=0.65`,
-        `hue=h=5:s=0.95`,
-        `noise=alls=20:allf=t`,
+        `eq=contrast=0.9:brightness=-0.02:saturation=0.6`,
+        `hue=h=5:s=0.9`,
+        `noise=alls=15:allf=t`,
         `format=yuv420p`
       ].join(",");
 
-      // ffmpeg コマンド（シンプル）
-      // -tune: not used in wasm; keep command minimal
-      const args = [
+      await ffmpeg.run(
         "-i", inName,
         "-vf", vf,
-        "-b:v", bitrate,
-        "-c:v", "libx264",
         "-preset", "veryfast",
-        "-movflags", "faststart",
+        "-b:v", "200k",
+        "-c:v", "libx264",
         "-c:a", "aac",
-        "-b:a", "96k",
-        "-y",
+        "-movflags", "faststart",
         outName
-      ];
+      );
 
-      setStatus("変換中...（進捗がバーに表示されます）");
-      // 実行
-      await ffmpeg.run(...args);
-
-      setStatus("出力ファイルを取得中...");
       const data = ffmpeg.FS("readFile", outName);
-
-      // 古い URL があれば解放
-      if (latestOutputUrl) URL.revokeObjectURL(latestOutputUrl);
-
       const blob = new Blob([data.buffer], { type: "video/mp4" });
-      latestOutputUrl = URL.createObjectURL(blob);
-
-      // プレビュー表示
-      preview.src = latestOutputUrl;
-      preview.load();
-      previewArea.style.display = "block";
-
-      // メタ情報
-      metaEl.textContent = `出力: ${outName} — 推定サイズ: ${(blob.size/1024/1024).toFixed(2)} MB — 解像度: ${w}x${h} — ビットレート: ${bitrate}`;
-
-      // ダウンロードボタン作成
+      if (outUrl) URL.revokeObjectURL(outUrl);
+      outUrl = URL.createObjectURL(blob);
+      video.src = outUrl;
+      video.load();
       downloadBtn.disabled = false;
       downloadBtn.onclick = () => {
         const a = document.createElement("a");
-        a.href = latestOutputUrl;
-        a.download = outName;
+        a.href = outUrl;
+        a.download = "retro_144p.mp4";
         a.click();
       };
-
-      setStatus("変換完了！");
-      setProgress(1);
-    } catch (err) {
-      console.error(err);
-      alert("変換中にエラーが発生しました。コンソールを確認してください。");
-      setStatus("エラー: " + (err.message || err));
-      setProgress(0);
-    } finally {
-      startBtn.disabled = false;
-    }
-  });
-</script>
+      status.textContent = "完了！";
+      convertBtn.disabled = false;
+    };
+  </script>
 </body>
 </html>
