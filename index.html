@@ -3,114 +3,172 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Retro 144p Video Converter</title>
+  <title>Retro 144p Converter — 改良版</title>
   <style>
-    body{font-family:sans-serif;background:#0e141f;color:#e6edf5;padding:20px;}
-    h1{font-size:20px;margin-bottom:10px;}
-    .card{background:#141d2a;border:1px solid #263448;padding:20px;border-radius:12px;max-width:800px;margin:auto;}
-    input,button,select{margin:5px 0;padding:8px;border-radius:6px;border:none;}
-    button{background:#2563eb;color:white;cursor:pointer;font-weight:bold;}
-    button:disabled{opacity:0.5;cursor:not-allowed;}
-    video{max-width:100%;margin-top:10px;border-radius:6px;background:black;}
-    .progress{height:10px;background:#1e293b;border-radius:5px;overflow:hidden;margin-top:10px;}
-    .bar{height:100%;width:0%;background:#3b82f6;transition:width .2s;}
-    .note{font-size:13px;color:#94a3b8;margin-top:10px;}
+    body { font-family: system-ui, sans-serif; background:#111; color:#eee; padding:20px; }
+    .card { background:#222; padding:20px; border-radius:8px; max-width:800px; margin:auto; }
+    label { display:block; margin-top:12px; }
+    input, select { padding:6px; margin-top:4px; width:100%; max-width:300px; }
+    button { margin-top:12px; padding:10px 14px; border:none; border-radius:6px; background:#28a; color:#fff; cursor:pointer; }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    .progress { margin-top:10px; height:8px; background:#444; border-radius:4px; overflow:hidden; }
+    .bar { height:100%; width:0%; background:#28a; transition: width 0.2s; }
+    video { margin-top:12px; max-width:100%; background:black; }
+    .status { margin-top:8px; font-size:14px; color:#afa; }
+    .error { color:#f88; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>🎞️ Retro 144p Video Converter</h1>
-    <p>動画をブラウザ内で低解像度（144p）＆レトロ風エフェクトに変換します。</p>
+    <h2>Retro 144p Converter — 改良版</h2>
+    <label>動画ファイルを選択 <input id="file" type="file" accept="video/*"></label>
 
-    <input type="file" id="file" accept="video/*"><br>
-    <select id="resolution">
-      <option value="256:144">144p (256x144)</option>
-      <option value="426:240">240p (426x240)</option>
-      <option value="320:180">180p (320x180)</option>
-    </select>
-    <br>
-    <button id="convert">変換開始</button>
-    <button id="download" disabled>ダウンロード</button>
-    <div id="status"></div>
+    <label>出力解像度
+      <select id="targetRes">
+        <option value="256:144">256×144 (144p)</option>
+        <option value="320:180">320×180</option>
+        <option value="426:240">426×240</option>
+      </select>
+    </label>
+    <label>ビットレート <input id="bitrate" type="text" value="200k"></label>
+
+    <button id="startBtn">変換開始</button>
+    <button id="downloadBtn" disabled>ダウンロード</button>
     <div class="progress"><div id="bar" class="bar"></div></div>
+    <div id="status" class="status"></div>
 
-    <video id="output" controls></video>
-    <p class="note">※ 初回は ffmpeg コア (~25MB) をダウンロードします。しばらくお待ちください。</p>
+    <div id="previewArea" style="display:none;">
+      <video id="preview" controls playsinline></video>
+      <div id="meta"></div>
+    </div>
   </div>
 
   <script type="module">
-    import { createFFmpeg, fetchFile } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.9/dist/ffmpeg.min.mjs";
+    import { createFFmpeg, fetchFile } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.2/dist/ffmpeg.min.js";
 
-    const ffmpeg = createFFmpeg({
-      log: true,
-      corePath: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.9/dist/ffmpeg-core.js"
-    });
+    const ffmpeg = createFFmpeg({ log: true });
+    let isLoaded = false;
 
     const fileInput = document.getElementById("file");
-    const convertBtn = document.getElementById("convert");
-    const downloadBtn = document.getElementById("download");
-    const status = document.getElementById("status");
+    const startBtn = document.getElementById("startBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const statusEl = document.getElementById("status");
     const bar = document.getElementById("bar");
-    const video = document.getElementById("output");
-    const resolution = document.getElementById("resolution");
+    const preview = document.getElementById("preview");
+    const previewArea = document.getElementById("previewArea");
+    const metaEl = document.getElementById("meta");
+    const targetRes = document.getElementById("targetRes");
+    const bitrateInput = document.getElementById("bitrate");
 
-    let outUrl = null;
+    function logStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function logError(msg) {
+      statusEl.innerHTML = `<span class="error">${msg}</span>`;
+    }
 
     ffmpeg.setProgress(({ ratio }) => {
-      bar.style.width = (ratio * 100).toFixed(1) + "%";
+      if (ratio != null) {
+        bar.style.width = `${(ratio * 100).toFixed(2)}%`;
+      }
     });
 
-    convertBtn.onclick = async () => {
-      const file = fileInput.files[0];
-      if (!file) return alert("動画ファイルを選択してください。");
+    ffmpeg.setLogger(({ type, message }) => {
+      console.log(`[ffmpeg ${type}] ${message}`);
+    });
 
-      convertBtn.disabled = true;
-      status.textContent = "初期化中...";
-      if (!ffmpeg.isLoaded()) await ffmpeg.load();
+    async function loadFFmpegCore() {
+      if (isLoaded) return;
+      logStatus("ffmpeg コアをロード中...");
+      try {
+        await ffmpeg.load({
+          coreURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.2/dist/ffmpeg-core.js",
+          wasmURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.2/dist/ffmpeg-core.wasm",
+          workerURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.2/dist/ffmpeg-core.worker.js"
+        });
+        isLoaded = true;
+        logStatus("ffmpeg コアのロード完了");
+      } catch (err) {
+        console.error("ffmpeg.load error:", err);
+        logError("ffmpeg コアのロードに失敗しました: " + err.message);
+        throw err;
+      }
+    }
 
-      status.textContent = "変換中...";
-      const inName = "input.mp4";
-      const outName = "output.mp4";
+    startBtn.addEventListener("click", async () => {
+      const f = fileInput.files[0];
+      if (!f) {
+        alert("動画を選んでください");
+        return;
+      }
+      startBtn.disabled = true;
+      downloadBtn.disabled = true;
+      bar.style.width = "0%";
+      previewArea.style.display = "none";
 
-      ffmpeg.FS("writeFile", inName, await fetchFile(file));
+      try {
+        await loadFFmpegCore();
 
-      const [w, h] = resolution.value.split(":");
+        logStatus("入力ファイルを読み込み中...");
+        const inName = "in" + Date.now() + "_" + f.name;
+        const outName = "out_retro.mp4";
+        const data = await fetchFile(f);
+        ffmpeg.FS("writeFile", inName, data);
 
-      const vf = [
-        `scale=${w}:${h}`,
-        `eq=contrast=0.9:brightness=-0.02:saturation=0.6`,
-        `hue=h=5:s=0.9`,
-        `noise=alls=15:allf=t`,
-        `format=yuv420p`
-      ].join(",");
+        const [w, h] = targetRes.value.split(":").map(s => parseInt(s));
+        const bitrate = bitrateInput.value || "200k";
 
-      await ffmpeg.run(
-        "-i", inName,
-        "-vf", vf,
-        "-preset", "veryfast",
-        "-b:v", "200k",
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-movflags", "faststart",
-        outName
-      );
+        const vf = [
+          `scale=${w}:${h}`,
+          `eq=contrast=0.95:brightness=-0.02:saturation=0.65`,
+          `hue=h=5:s=0.95`,
+          `noise=alls=20:allf=t`,
+          `format=yuv420p`
+        ].join(",");
 
-      const data = ffmpeg.FS("readFile", outName);
-      const blob = new Blob([data.buffer], { type: "video/mp4" });
-      if (outUrl) URL.revokeObjectURL(outUrl);
-      outUrl = URL.createObjectURL(blob);
-      video.src = outUrl;
-      video.load();
-      downloadBtn.disabled = false;
-      downloadBtn.onclick = () => {
-        const a = document.createElement("a");
-        a.href = outUrl;
-        a.download = "retro_144p.mp4";
-        a.click();
-      };
-      status.textContent = "完了！";
-      convertBtn.disabled = false;
-    };
+        const args = [
+          "-i", inName,
+          "-vf", vf,
+          "-b:v", bitrate,
+          "-c:v", "libx264",
+          "-preset", "veryfast",
+          "-movflags", "faststart",
+          "-c:a", "aac",
+          "-b:a", "96k",
+          "-y",
+          outName
+        ];
+
+        logStatus("変換中...");
+        await ffmpeg.run(...args);
+
+        logStatus("出力取得中...");
+        const outData = ffmpeg.FS("readFile", outName);
+        const blob = new Blob([outData.buffer], { type: "video/mp4" });
+        const url = URL.createObjectURL(blob);
+
+        preview.src = url;
+        preview.load();
+        previewArea.style.display = "block";
+        metaEl.textContent = `解像度: ${w}×${h}, ビットレート: ${bitrate}, サイズ: ${(blob.size/1024/1024).toFixed(2)} MB`;
+
+        downloadBtn.disabled = false;
+        downloadBtn.onclick = () => {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = outName;
+          a.click();
+        };
+
+        logStatus("変換完了");
+      } catch (err) {
+        console.error("変換処理で例外:", err);
+        logError("変換処理でエラー: " + (err.message || err));
+      } finally {
+        startBtn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>
