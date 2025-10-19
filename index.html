@@ -2,28 +2,27 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Retro 144p Converter — 改良版</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Retro 144p Converter — 修正版 (CDN パス修正)</title>
   <style>
-    body { font-family: system-ui, sans-serif; background:#111; color:#eee; padding:20px; }
-    .card { background:#222; padding:20px; border-radius:8px; max-width:800px; margin:auto; }
-    label { display:block; margin-top:12px; }
-    input, select { padding:6px; margin-top:4px; width:100%; max-width:300px; }
-    button { margin-top:12px; padding:10px 14px; border:none; border-radius:6px; background:#28a; color:#fff; cursor:pointer; }
-    button:disabled { opacity:0.5; cursor:not-allowed; }
-    .progress { margin-top:10px; height:8px; background:#444; border-radius:4px; overflow:hidden; }
-    .bar { height:100%; width:0%; background:#28a; transition: width 0.2s; }
-    video { margin-top:12px; max-width:100%; background:black; }
-    .status { margin-top:8px; font-size:14px; color:#afa; }
-    .error { color:#f88; }
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 20px; }
+    .card { background: #222; border-radius: 8px; padding: 20px; max-width: 800px; margin: auto; }
+    label, select, input, button { display: block; margin-top: 12px; }
+    input, select { padding: 6px; width: 100%; max-width: 300px; }
+    button { padding: 10px; background: #28a; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .progress { margin-top: 12px; height: 8px; background: #444; border-radius: 4px; overflow: hidden; }
+    .bar { width: 0%; height: 100%; background: #28a; transition: width 0.2s; }
+    video { margin-top: 12px; max-width: 100%; background: black; }
+    .status { margin-top: 8px; font-size: 14px; }
+    .error { color: #f88; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h2>Retro 144p Converter — 改良版</h2>
-    <label>動画ファイルを選択 <input id="file" type="file" accept="video/*"></label>
-
-    <label>出力解像度
+    <h2>Retro 144p Converter — 修正版 (CDN パス修正)</h2>
+    <label>動画ファイル <input id="file" type="file" accept="video/*"></label>
+    <label>解像度
       <select id="targetRes">
         <option value="256:144">256×144 (144p)</option>
         <option value="320:180">320×180</option>
@@ -31,20 +30,21 @@
       </select>
     </label>
     <label>ビットレート <input id="bitrate" type="text" value="200k"></label>
-
     <button id="startBtn">変換開始</button>
     <button id="downloadBtn" disabled>ダウンロード</button>
     <div class="progress"><div id="bar" class="bar"></div></div>
     <div id="status" class="status"></div>
-
     <div id="previewArea" style="display:none;">
       <video id="preview" controls playsinline></video>
       <div id="meta"></div>
     </div>
   </div>
 
+  <!-- ここで UMD 形式の CDN スクリプトを読み込む -->
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
   <script type="module">
-    import { createFFmpeg, fetchFile } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.2/dist/ffmpeg.min.js";
+    // UMD 形式で読み込んであるなら、`FFmpeg` グローバルオブジェクトから取得
+    const { createFFmpeg, fetchFile } = FFmpeg;
 
     const ffmpeg = createFFmpeg({ log: true });
     let isLoaded = false;
@@ -63,7 +63,6 @@
     function logStatus(msg) {
       statusEl.textContent = msg;
     }
-
     function logError(msg) {
       statusEl.innerHTML = `<span class="error">${msg}</span>`;
     }
@@ -73,7 +72,6 @@
         bar.style.width = `${(ratio * 100).toFixed(2)}%`;
       }
     });
-
     ffmpeg.setLogger(({ type, message }) => {
       console.log(`[ffmpeg ${type}] ${message}`);
     });
@@ -82,16 +80,13 @@
       if (isLoaded) return;
       logStatus("ffmpeg コアをロード中...");
       try {
-        await ffmpeg.load({
-          coreURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.2/dist/ffmpeg-core.js",
-          wasmURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.2/dist/ffmpeg-core.wasm",
-          workerURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.2/dist/ffmpeg-core.worker.js"
-        });
+        // load() を呼ぶだけで core が自動的に読み込まれる UMD 形式の振る舞いを期待
+        await ffmpeg.load();
         isLoaded = true;
         logStatus("ffmpeg コアのロード完了");
       } catch (err) {
         console.error("ffmpeg.load error:", err);
-        logError("ffmpeg コアのロードに失敗しました: " + err.message);
+        logError("ffmpeg コアのロードに失敗: " + err.message);
         throw err;
       }
     }
@@ -99,7 +94,7 @@
     startBtn.addEventListener("click", async () => {
       const f = fileInput.files[0];
       if (!f) {
-        alert("動画を選んでください");
+        alert("動画を選択してください");
         return;
       }
       startBtn.disabled = true;
@@ -110,7 +105,7 @@
       try {
         await loadFFmpegCore();
 
-        logStatus("入力ファイルを読み込み中...");
+        logStatus("入力ファイル読み込み中...");
         const inName = "in" + Date.now() + "_" + f.name;
         const outName = "out_retro.mp4";
         const data = await fetchFile(f);
@@ -151,7 +146,7 @@
         preview.src = url;
         preview.load();
         previewArea.style.display = "block";
-        metaEl.textContent = `解像度: ${w}×${h}, ビットレート: ${bitrate}, サイズ: ${(blob.size/1024/1024).toFixed(2)} MB`;
+        metaEl.textContent = `解像度: ${w}×${h}, ビットレート: ${bitrate}, サイズ: ${(blob.size / 1024 / 1024).toFixed(2)} MB`;
 
         downloadBtn.disabled = false;
         downloadBtn.onclick = () => {
@@ -163,8 +158,8 @@
 
         logStatus("変換完了");
       } catch (err) {
-        console.error("変換処理で例外:", err);
-        logError("変換処理でエラー: " + (err.message || err));
+        console.error("変換中にエラー:", err);
+        logError("変換エラー: " + (err.message || err));
       } finally {
         startBtn.disabled = false;
       }
